@@ -1,0 +1,5 @@
+/lolercraft
+/lolercraft.dSYM/
+.vscode/
+.build/
+.clangd
