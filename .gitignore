@@ -3,3 +3,4 @@
 .vscode/
 build/
 .clangd
+.DS_STORE
