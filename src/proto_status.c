@@ -52,7 +52,7 @@ static json_kv st_vers = { .key      = "version",
                            .data.obj = &st_vers_obj,
                            ._next    = &st_players };
 
-json_object st_root = { .vals = &st_vers, .static_alloc = true };
+static json_object st_root = { .vals = &st_vers, .static_alloc = true };
 
 // 3s cache
 pthread_mutex_t _st_mutex = PTHREAD_MUTEX_INITIALIZER;

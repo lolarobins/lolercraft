@@ -65,7 +65,7 @@ extern json_object *json_nested_object (json_object *obj, const char **keys,
 // set key to null
 extern bool json_set_null (json_object *obj, const char *key);
 // set key to string val
-extern bool json_set_str (json_object *obj, const char *key, const char *str);
+extern bool json_set_str (json_object *obj, const char *key, const char *str, size_t len);
 // set key to bool val
 extern bool json_set_bool (json_object *obj, const char *key, bool b);
 // set key to numerical val

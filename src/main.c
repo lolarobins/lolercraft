@@ -29,7 +29,7 @@ bool log_debug = true;
 
 int main () {
     json_object *obj;
-    if (!(obj = json_decode ("{\"meow\":true,\"gay\":null}", 24))) {
+    if (!(obj = json_decode ("{\"meow\":{\"gay\":\"meow lol\"},\"gay\":null}", 0))) {
         log_err (true, "%s", err_buf);
         return -1;
     }
@@ -40,15 +40,7 @@ int main () {
         log_err (true, "%s", err_buf);
         return -1;
     }
-    log("%ld, %s", len, str);
-
-    extern json_object st_root;
-    str = json_encode (&st_root, &len, true);
-    if (!str) {
-        log_err (true, "%s", err_buf);
-        return -1;
-    }
-    log("%ld, %s", len, str);
+    puts(str);
 
     return 0;
 
