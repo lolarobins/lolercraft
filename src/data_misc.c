@@ -22,9 +22,10 @@ static inline size_t mem_needed (size_t len) {
 // add new memory to str
 static inline bool mem_resize_s (str_auto *str, size_t newlen) {
     size_t needed = mem_needed (newlen);
+    
     if (needed != str->_alen) {
         void *old_ptr = str->str;
-        if ((str->str = realloc (str->str, needed))) {
+        if (!(str->str = realloc (str->str, needed))) {
             free (old_ptr);
             log_malloc_err (needed);
             return false;
@@ -126,7 +127,7 @@ bool str_append (str_auto *str, const char *new) {
     return true;
 }
 
-bool str_putchar (str_auto *str, char c) {
+bool str_add_char (str_auto *str, char c) {
     if (!str) return false;
 
     if (!mem_resize_s (str, str->len + 2)) return false;
@@ -214,7 +215,7 @@ bool buf_append (buf_auto *buf, uint8_t *b, size_t len) {
     return true;
 }
 
-bool buf_addb (buf_auto *buf, uint8_t b) {
+bool buf_add_byte (buf_auto *buf, uint8_t b) {
     if (!buf) return false;
 
     if (!mem_resize_b (buf, buf->len + 1)) return false;

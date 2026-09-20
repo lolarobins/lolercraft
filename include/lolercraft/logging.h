@@ -38,9 +38,11 @@ extern bool log_debug;
         }                                                                \
     }
 
-#define log_malloc_err(size)                                               \
-    log_err (true, "memory allocation failure (called in: %s, size: %lu)", \
-             __PRETTY_FUNCTION__, (unsigned long) size);
+#define log_malloc_err(size)                                      \
+    log_err (true,                                                \
+             "memory allocation failure (called at "__FILE_NAME__ \
+             ":%d, func: %s, size: %lu)",                         \
+             __LINE__, __FUNCTION__, (unsigned long) size);
 
 #define log_debug(fmt, ...)                                        \
     {                                                              \

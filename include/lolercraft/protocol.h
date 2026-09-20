@@ -47,6 +47,8 @@ extern bool p_buf_str (buf_auto *packet, char *str, size_t len);
 extern bool p_encrypt (s_client *client, buf_auto *buf);
 extern bool p_buf_send (s_client *client, buf_auto *buf);
 
+extern void p_client_free (s_client *client);
+
 // -- packet struct --
 
 // serverbound packet callback

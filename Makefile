@@ -1,6 +1,6 @@
 CC=gcc
-CFLAGS=-g -O0 -Wall -Iinclude -std=c23 -pthread -D_THREAD_SAFE `pkgconf openssl --cflags`
-LDFLAGS=`pkgconf openssl --libs` `pkgconf --libs libcurl`
+CFLAGS=-g -O0 -Wall -Iinclude -std=c23 -pthread -D_THREAD_SAFE `pkgconf --cflags openssl`
+LDFLAGS=`pkgconf --libs openssl` `pkgconf --libs libcurl`
 OBJS=\
 	build/data_json.o \
 	build/data_misc.o \

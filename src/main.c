@@ -1,11 +1,13 @@
 // lolercraft
 
 #include "lolercraft/json.h"
+#include "lolercraft/socket.h"
 #include <errno.h>
 #include <pthread.h>
 #include <signal.h>
 
 #include <stdio.h>
+#include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -27,24 +29,100 @@ pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 bool log_debug = true;
 
-int main () {
-    json_object *obj;
-    if (!(obj = json_decode ("{\"meow\":{\"gay\":\"meow lol\"},\"gay\":null}", 0))) {
-        log_err (true, "%s", err_buf);
-        return -1;
+static const char default_config[]
+   = "{\n"
+     "    \"offline\": false,\n"
+     "    \"ipv4\": {\n"
+     "        \"address\": \"localhost\",\n"
+     "        \"port\": 25565,\n"
+     "        \"enabled:\" true\n"
+     "    },\n"
+     "    \"ipv6\": {\n"
+     "        \"address\": \"::1\",\n"
+     "        \"port\": 25565\n"
+     "        \"enabled:\" false\n"
+     "    }\n"
+     "}\n";
+
+static bool load_config () {
+    json_object *obj = json_read ("config.json");
+    if (!obj) {
+        if (errno == ENOENT) {
+            errno = 0;
+
+            // create file
+            FILE *file = fopen ("config.json", "w");
+            if (!file) {
+                fprintf (stderr,
+                         "FATAL: could not open config.json for write: %s\n",
+                         strerror (errno));
+                return false;
+            }
+
+            fwrite (default_config, sizeof (default_config) - 1, 1, file);
+            if (errno) {
+                fprintf (stderr, "FATAL: could not write to config.json: %s\n",
+                         strerror (errno));
+                fclose (file);
+                return false;
+            }
+
+            fclose (file);
+
+            char full_path[PATH_MAX];
+            if (!realpath ("config.json", full_path)) {
+                fprintf (
+                   stderr,
+                   "FATAL: could not determine config.json file path: %s\n",
+                   strerror (errno));
+                return -1;
+            }
+
+            printf (
+               "default configuration generated at %s, please make any "
+               "necessary changes and restart the program\n",
+               full_path);
+            return -1;
+        } else {
+            fprintf (stderr, "FATAL: failed to read config.json: %s\n",
+                     err_buf);
+            return false;
+        }
     }
 
-    size_t len;
-    char *str = json_encode (obj, &len, true);
-    if (!str) {
-        log_err (true, "%s", err_buf);
+    // load values
+    json_kv *offline_mode = json_get (obj, "offline");
+    s_offline_mode        = offline_mode && offline_mode->type == JSON_BOOL
+                            && offline_mode->data.b == true;
+
+    json_kv *ipv4 = json_get(obj, "ipv4");
+    if (ipv4 && ipv4->type == JSON_OBJECT) {
+    } 
+
+    json_free (obj);
+
+    // debug print
+    log_debug("starting with the following configuration:");
+    log_debug("mojang authentication: %s", offline_mode ? "disabled" : "enabled");
+    if (s_flags & S_FLAG_IPV4) log_debug("ipv4 socket: %s:%d", s_addr4, s_port4);
+    if (s_flags & S_FLAG_IPV6) log_debug("ipv6 socket: %s:%d", s_addr6, s_port6);
+
+    return true;
+}
+
+int main () {
+    strcpy (thread_name, "main");
+
+    // load config
+    if (!load_config ()) return -1;
+
+    // verify existence of at least 1 socket
+    if ((s_flags & (S_FLAG_IPV4 | S_FLAG_IPV6)) == 0) {
+        fprintf (stderr, "FATAL: neither ipv4 nor ipv6 socket enabled\n");
         return -1;
     }
-    puts(str);
 
     return 0;
-
-    strcpy (thread_name, "main");
 
     // openssl setup
     ERR_load_crypto_strings ();

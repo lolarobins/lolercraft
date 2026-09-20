@@ -43,8 +43,12 @@ bool s_offline_mode;
 
 static void _free_client (s_client *client) {
     if (!client) return;
+
+    p_client_free (client);
+
     if (client->_fd) close (client->_fd);
     if (client->_p_buf) free (client->_p_buf);
+
     free (client);
 }
 
@@ -87,9 +91,7 @@ static void *_client (void *data) {
     if (client->state == 1) {
         packet_id = p_receive (client);
 
-        if (client->_encrypted) {
-            log ("enc recv: %d", packet_id);
-        }
+        if (client->_encrypted) { log ("enc recv: %d", packet_id); }
 
         // server status, method can be replaced later but done with raw
         // writes
@@ -327,6 +329,4 @@ int s_start () {
     return 1;
 }
 
-void s_cleanup () {
-    status_cleanup();
-}
+void s_cleanup () { status_cleanup (); }

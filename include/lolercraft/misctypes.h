@@ -61,7 +61,7 @@ extern bool str_append (str_auto *str, const char *new);
 /// @param str auto string struct
 /// @param c character to append
 /// @return false if err occured
-extern bool str_putchar (str_auto *str, char c);
+extern bool str_add_char (str_auto *str, char c);
 
 extern buf_auto *buf_init ();
 extern void *buf_free (buf_auto *buf);
@@ -70,7 +70,7 @@ extern bool buf_clear (buf_auto *buf);
 extern bool buf_expand (buf_auto *buf, size_t len);
 extern bool buf_printf (buf_auto *buf, const char *fmt, ...);
 extern bool buf_append (buf_auto *buf, uint8_t *b, size_t len);
-extern bool buf_addb (buf_auto *buf, uint8_t b);
+extern bool buf_add_byte (buf_auto *buf, uint8_t b);
 
 // -- varints specifically applicable to the mc proto --
 

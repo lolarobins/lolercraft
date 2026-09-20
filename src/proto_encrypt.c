@@ -52,6 +52,11 @@ void p_encrypt_free () {
     free (p_der);
 }
 
+void p_client_free (s_client *client) {
+    if (client->_encrypt)  EVP_CIPHER_CTX_cleanup(client->_encrypt);
+    if (client->_decrypt) EVP_CIPHER_CTX_cleanup(client->_decrypt);
+}
+
 bool p_encrypt (s_client *client, buf_auto *buf) {
     if (!client || !buf) return false;
 

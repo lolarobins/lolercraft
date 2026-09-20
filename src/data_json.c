@@ -2,7 +2,7 @@
 // json encoding/decoding
 
 #include <ctype.h>
-#include <math.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,8 +22,11 @@ static void _free_vals (json_kv *v) {
                 break;
             }
             case JSON_ARRAY: {
-                for (size_t i = 0; i < val->data.arr->len; i++)
-                    _free_vals (val->data.arr->vals[i]);
+                if (val->data.arr->vals) {
+                    for (size_t i = 0; i < val->data.arr->len; i++)
+                        _free_vals (val->data.arr->vals[i]);
+                    free (val->data.arr->vals);
+                }
                 free (val->data.arr);
                 break;
             }
@@ -55,6 +58,13 @@ json_object *json_init () {
     return obj;
 }
 
+json_array *json_array_init () {
+    json_array *arr = calloc (1, sizeof (json_array *));
+    if (!arr) { log_malloc_err (sizeof (json_array *)) return NULL; }
+
+    return arr;
+}
+
 // -- json modification functions --
 
 json_kv *json_get (json_object *obj, const char *key) {
@@ -68,8 +78,19 @@ json_kv *json_get (json_object *obj, const char *key) {
     return NULL;
 }
 
-json_object *json_nested_object (json_object *obj, const char **keys,
-                                 size_t len) {
+json_kv *json_array_get (json_array *arr, size_t pos) {
+    if (!arr) return NULL;
+    if (arr->len <= pos) {
+        log_err (false,
+                 "json_array_get: index out of bounds (i: %lu, array len: %lu)",
+                 pos, arr->len);
+        return NULL;
+    }
+    return arr->vals[pos];
+}
+
+json_object *json_get_nested_object (json_object *obj, const char **keys,
+                                     size_t len) {
     if (!obj || !keys || !len) return NULL;
 
     json_kv *kv = json_get (obj, keys[0]);
@@ -80,7 +101,7 @@ json_object *json_nested_object (json_object *obj, const char **keys,
     }
 
     if (len == 1) return kv->data.obj;
-    return json_nested_object (kv->data.obj, &keys[1], len - 1);
+    return json_get_nested_object (kv->data.obj, &keys[1], len - 1);
 }
 
 static bool _set (json_object *obj, const char *key, json_kv *data) {
@@ -126,6 +147,44 @@ static bool _set (json_object *obj, const char *key, json_kv *data) {
     return true;
 }
 
+static bool _array_set (json_array *arr, size_t pos, json_kv *kv) {
+    if (!arr || !kv) return false;
+
+    // out of bounds
+    if (pos > arr->len) {
+        log_err (false,
+                 "_array_set: index out of bounds (i: %lu, array len: %lu)",
+                 pos, arr->len);
+        return false;
+    }
+
+    // append to end
+    if (pos == arr->len) {
+        if (!arr->vals) {
+            arr->vals = malloc (sizeof (json_kv **) * 64);
+        } else if (((arr->len + 1) & 63) == 0) { // true on multiples of 64
+            json_kv **old_ptr = arr->vals;
+            size_t new_len
+               = sizeof (json_kv **) * 64 * (((arr->len + 1) / 64) + 1);
+            arr->vals = realloc (arr->vals, new_len);
+            if (!arr->vals) {
+                log_malloc_err (new_len);
+                free (old_ptr);
+                return false;
+            }
+        }
+        arr->vals[pos] = kv;
+        arr->len++;
+        return true;
+    }
+
+    // replace value
+    _free_vals (arr->vals[pos]);
+    arr->vals[pos] = kv;
+
+    return true;
+}
+
 static json_kv *_alloc_kv () {
     json_kv *kv = calloc (1, sizeof (json_kv));
     if (!kv) {
@@ -147,20 +206,30 @@ bool json_set_null (json_object *obj, const char *key) {
     return _set (obj, key, kv);
 }
 
-bool json_set_str (json_object *obj, const char *key, const char *str,
-                   size_t len) {
-    if (!obj || !key || !str) return false;
-    if (!len) len = strlen (str);
+bool json_array_set_null (json_array *arr, size_t pos) {
+    if (!arr) return false;
 
     json_kv *kv = _alloc_kv ();
     if (!kv) return false;
+
+    kv->type = JSON_NULL;
+
+    return _array_set (arr, arr->len, kv);
+}
+
+static json_kv *_set_str (const char *str, size_t len) {
+    if (!str) return NULL;
+    if (!len) len = strlen (str);
+
+    json_kv *kv = _alloc_kv ();
+    if (!kv) return NULL;
 
     kv->type     = JSON_STRING;
     kv->data.str = strndup (str, len);
     if (!kv->data.str) {
         log_malloc_err (len + 1);
         free (kv);
-        return false;
+        return NULL;
     }
 
     // string escapes
@@ -168,7 +237,25 @@ bool json_set_str (json_object *obj, const char *key, const char *str,
         if (kv->data.str[i] == '"' && kv->data.str[i - 1] == '\\')
             memcpy (kv->data.str + i - 1, kv->data.str + i, len - i + 1);
 
+    return kv;
+}
+
+bool json_set_str (json_object *obj, const char *key, const char *str,
+                   size_t len) {
+    if (!obj) return false;
+
+    json_kv *kv = _set_str (str, len);
+    if (!kv) return false;
     return _set (obj, key, kv);
+}
+
+bool json_array_set_str (json_array *arr, size_t pos, const char *str,
+                         size_t len) {
+    if (!arr) return false;
+
+    json_kv *kv = _set_str (str, len);
+    if (!kv) return false;
+    return _array_set (arr, arr->len, kv);
 }
 
 bool json_set_bool (json_object *obj, const char *key, bool b) {
@@ -183,6 +270,18 @@ bool json_set_bool (json_object *obj, const char *key, bool b) {
     return _set (obj, key, kv);
 }
 
+bool json_array_set_bool (json_array *arr, size_t pos, bool b) {
+    if (!arr) return false;
+
+    json_kv *kv = _alloc_kv ();
+    if (!kv) return false;
+
+    kv->type   = JSON_BOOL;
+    kv->data.b = b;
+
+    return _array_set (arr, arr->len, kv);
+}
+
 bool json_set_num (json_object *obj, const char *key, double num) {
     if (!obj || !key) return false;
 
@@ -195,6 +294,18 @@ bool json_set_num (json_object *obj, const char *key, double num) {
     return _set (obj, key, kv);
 }
 
+bool json_array_set_num (json_array *arr, size_t pos, double num) {
+    if (!arr) return false;
+
+    json_kv *kv = _alloc_kv ();
+    if (!kv) return false;
+
+    kv->type   = JSON_NUM;
+    kv->data.n = num;
+
+    return _array_set (arr, arr->len, kv);
+}
+
 bool json_set_object (json_object *obj, const char *key, json_object *obj_in) {
     if (!obj || !key) return false;
 
@@ -205,34 +316,245 @@ bool json_set_object (json_object *obj, const char *key, json_object *obj_in) {
     kv->data.obj = obj_in;
 
     return _set (obj, key, kv);
-    return true;
 }
 
-// !! this will be a bit more complicated, do later
-bool json_set_array (json_object *obj, const char *key, json_kv *data,
-                     size_t len) {
+bool json_array_set_object (json_array *arr, size_t pos, json_object *obj) {
+    if (!arr) return false;
+
+    json_kv *kv = _alloc_kv ();
+    if (!kv) return false;
+
+    kv->type     = JSON_OBJECT;
+    kv->data.obj = obj;
+
+    return _array_set (arr, arr->len, kv);
+}
+
+bool json_set_array (json_object *obj, const char *key, json_array *arr) {
     if (!obj || !key) return false;
 
     json_kv *kv = _alloc_kv ();
     if (!kv) return false;
 
-    kv->type = JSON_ARRAY;
+    kv->type     = JSON_ARRAY;
+    kv->data.arr = arr;
 
-    return false;
+    return _set (obj, key, kv);
+}
+
+bool json_array_set_array (json_array *arr, size_t pos, json_array *arr_in) {
+    if (!arr) return false;
+
+    json_kv *kv = _alloc_kv ();
+    if (!kv) return false;
+
+    kv->type     = JSON_ARRAY;
+    kv->data.arr = arr_in;
+
+    return _array_set (arr, arr->len, kv);
 }
 
 bool json_remove (json_object *obj, const char *key) { return false; }
 
-static json_object *_decode (const char *buf, size_t *cur, size_t *len) {
+// -- parsing --
+
+// false if end of buf
+static inline bool _filter_whitespace (const char *buf, size_t *i,
+                                       size_t *len) {
+    while (true)
+        if (*i < *len && isspace (buf[*i])) (*i)++;
+        else if (*i == *len || buf[*i] == '\0')
+            return false;
+        else
+            break;
+
+    return true;
+}
+
+extern json_object *__decode_obj (const char *buf, size_t *cur, size_t *len);
+#define VAL_SET(type, ...)                           \
+    (obj ? json_set_##type (obj, key, ##__VA_ARGS__) \
+         : json_array_set_##type (arr, arr->len, ##__VA_ARGS__))
+
+static bool _decode_val (const char *buf, size_t *cur, size_t *len,
+                         json_object *obj, json_array *arr, const char *key) {
+    if (!(arr || (obj && key))) return false;
+
+    size_t i      = *cur;
+    int val_start = *cur, val_len = 0;
+
+    // -- parse value by type --
+
+    // alnum values: bools, null, numbers
+    if (isalnum (buf[i]) || buf[i] == '-') {
+        for (; i < *len; i++) {
+            val_len = i - val_start;
+
+            if (buf[i] == ',' || buf[i] == '}' || buf[i] == ']'
+                || isspace (buf[i])) {
+                i--;
+                break;
+            }
+        }
+
+        if (val_len) {
+            // bool (true)
+            if (!strncmp ("true", &buf[val_start], val_len)) {
+                if (!VAL_SET (bool, true)) { return false; }
+            }
+            // bool (false)
+            else if (!strncmp ("false", &buf[val_start], val_len)) {
+                if (!VAL_SET (bool, false)) { return false; }
+            }
+            // null
+            else if (!strncmp ("null", &buf[val_start], val_len)) {
+                if (!VAL_SET (null)) { return false; }
+            }
+            // numerical
+            else if (isnumber (buf[val_start]) || buf[val_start] == '-') {
+                for (size_t j = 0; j < val_len; j++)
+                    if (!(isnumber (buf[j + val_start])
+                          || buf[j + val_start] == '.'
+                          || (j == 0 && buf[j + val_start] == '-'))) {
+                        log_err (
+                           false,
+                           "json_decode_obj: invalid numerical token '%*.s'",
+                           (int) val_len, &buf[val_start])
+                    }
+
+                double d;
+                if (sscanf (&buf[val_start], "%lf", &d) != 1) {
+                    log_err (
+                       false,
+                       "json_decode_obj: sscanf could not parse double '%*.s'",
+                       (int) val_len, &buf[val_start]);
+                    return false;
+                }
+
+                if (!VAL_SET (num, d)) return false;
+            } else {
+                log_err (false,
+                         "json_decode_obj: incomplete value token '%.*s'",
+                         (int) val_len, &buf[val_start]);
+                return false;
+            }
+
+            *cur = i;
+            return true;
+        }
+    }
+    // string
+    else if (buf[val_start] == '"') {
+        for (; i < *len - 1; i++) {
+            if (buf[i] != '\\' && buf[i + 1] == '"') {
+                i++;
+                break;
+            }
+        }
+
+        if (!VAL_SET (str, &buf[val_start + 1], i - val_start - 1))
+            return false;
+    }
+    // object
+    else if (buf[val_start] == '{') {
+        json_object *new_obj = __decode_obj (buf, &i, len);
+        *cur                 = i;
+
+        if (!new_obj || !VAL_SET (object, new_obj)) {
+            if (!new_obj) json_free (new_obj);
+            free (obj);
+            return false;
+        }
+    }
+    // array
+    else if (buf[i] == '[') {
+        i++;
+
+        // filter whitespace
+        if (!_filter_whitespace (buf, &i, len)) {
+            log_err (false, "json_decode_obj: incomplete array");
+            return false;
+        }
+
+        // handle empty array cond before loop
+        if (buf[i] == ']') {
+            i++;
+            if (!VAL_SET (array, NULL)) return false;
+        } else {
+            json_array *new_arr = json_array_init ();
+            if (!new_arr) return false;
+
+            while (true) {
+                // filter leading whitespace
+                if (!_filter_whitespace (buf, &i, len)) {
+                    log_err (false, "json_decode_obj: incomplete array");
+                    if (new_arr->vals) free (new_arr->vals);
+                    free (new_arr);
+                    return false;
+                }
+
+                if (!_decode_val (buf, &i, len, NULL, new_arr, NULL)) {
+                    if (new_arr->vals) free (new_arr->vals);
+                    free (new_arr);
+                    return false;
+                }
+
+                *cur = (++i);
+
+                // filter trailing whitespace
+                if (!_filter_whitespace (buf, &i, len)) {
+                    log_err (false, "json_decode_obj: incomplete array");
+                    if (new_arr->vals) free (new_arr->vals);
+                    free (new_arr);
+                    return false;
+                }
+
+                if (buf[i] == ',') {
+                    i++;
+                    continue;
+                } else if (buf[i] == ']') {
+                    i++;
+                    break;
+                } else {
+                    // invalid character
+                    log_err (false,
+                             "json_decode_obj: expected ',' or ']' char at "
+                             "byte %ld, got '%c'",
+                             i, buf[i]);
+                    if (new_arr->vals) free (new_arr->vals);
+                    free (new_arr);
+                    return false;
+                }
+            }
+
+            if (!VAL_SET (array, new_arr)) {
+                if (new_arr->vals) free (new_arr->vals);
+                free (new_arr);
+                return false;
+            }
+        }
+    }
+    // unrecognized
+    else {
+        log_err (false, "json_decode_obj: incomplete value token");
+        return false;
+    }
+
+    *cur = i;
+    return true;
+}
+
+#undef VAL_SET
+
+json_object *__decode_obj (const char *buf, size_t *cur, size_t *len) {
     json_object *obj = json_init ();
 
     uint8_t state  = 0;
     char last_char = 0, key_buf[256] = { 0 };
-    size_t key_start = 0, val_start = 0, val_len = 0;
+    size_t key_start = 0;
 
     for (size_t i = *cur; i < *len; i++) {
-        if (buf[i] == '\0') break;
-        while (i < *len && isspace (buf[i])) i++;
+        if (!_filter_whitespace (buf, &i, len)) break;
 
         // OBJECT START {
         if (state == 0) {
@@ -240,8 +562,10 @@ static json_object *_decode (const char *buf, size_t *cur, size_t *len) {
                 state++;
                 continue;
             } else {
-                log_err (false, "json_decode: expected '{' char at byte %ld",
-                         i);
+                log_err (
+                   false,
+                   "json_decode_obj: expected '{' char at byte %ld, got '%c'",
+                   i, buf[i]);
                 json_free (obj);
                 return NULL;
             }
@@ -257,8 +581,10 @@ static json_object *_decode (const char *buf, size_t *cur, size_t *len) {
                 state = 6;
                 break;
             } else {
-                log_err (false, "json_decode: expected '}' char at byte %ld",
-                         i);
+                log_err (
+                   false,
+                   "json_decode_obj: expected '}' char at byte %ld, got '%c'",
+                   i, buf[i]);
                 json_free (obj);
                 return NULL;
             }
@@ -269,7 +595,8 @@ static json_object *_decode (const char *buf, size_t *cur, size_t *len) {
             // end key str
             if (last_char != '\\' && buf[i] == '"') {
                 if (i - key_start > 255) {
-                    log_err (false, "json_decode: key exceeds string limit");
+                    log_err (false,
+                             "json_decode_obj: key exceeds string limit");
                     json_free (obj);
                     return NULL;
                 }
@@ -291,8 +618,10 @@ static json_object *_decode (const char *buf, size_t *cur, size_t *len) {
                 state++;
                 continue;
             } else {
-                log_err (false, "json_decode: expected ':' char at byte %ld",
-                         i);
+                log_err (
+                   false,
+                   "json_decode_obj: expected ':' char at byte %ld, got '%c'",
+                   i, buf[i]);
                 json_free (obj);
                 return NULL;
             }
@@ -300,91 +629,13 @@ static json_object *_decode (const char *buf, size_t *cur, size_t *len) {
 
         // VALUE
         if (state == 4) {
-            val_start = i;
-            val_len   = 0;
-
-            // -- get value--
-
-            // alnum values: bools, null, numbers
-            if (isalnum (buf[i]) || buf[i] == '-') {
-                for (; i < *len; i++) {
-                    val_len = i - val_start;
-
-                    if (buf[i] == ',' || buf[i] == '}' || isspace (buf[i])) {
-                        i--;
-                        break;
-                    }
-                }
-
-                // -- parse values --
-
-                if (val_len) {
-                    // bool (true)
-                    if (!strncmp ("true", &buf[val_start], val_len)) {
-                        if (!json_set_bool (obj, key_buf, true)) { break; }
-                    }
-                    // bool (false)
-                    else if (!strncmp ("false", &buf[val_start], val_len)) {
-                        if (!json_set_bool (obj, key_buf, false)) { break; }
-                    }
-                    // null
-                    else if (!strncmp ("null", &buf[val_start], val_len)) {
-                        if (!json_set_null (obj, key_buf)) { break; }
-                    }
-                    // numerical
-                    else if (isnumber (buf[val_start]
-                                       || buf[val_start] == '-')) {
-                    } else {
-                        log_err (false,
-                                 "json_decode: incomplete value token (key: "
-                                 "%s, token: %.*s)",
-                                 key_buf, (int) val_len, &buf[val_start]);
-                    }
-                }
-
-                state++;
-                continue;
-            }
-
-            // string
-            if (buf[val_start] == '"') {
-                for (; i < *len - 1; i++) {
-                    if (buf[i] != '\\' && buf[i + 1] == '"') {
-                        i++;
-                        break;
-                    }
-                }
-
-                json_set_str (obj, key_buf, &buf[val_start + 1],
-                              i - val_start - 1);
-            }
-            // object
-            else if (buf[val_start] == '{') {
-                *cur = i;
-
-                json_object *new_obj = _decode (buf, cur, len);
-
-                if (!new_obj || !json_set_object (obj, key_buf, new_obj)) {
-                    if (!new_obj) json_free (new_obj);
-                    free (obj);
-                    return NULL;
-                }
-
-                i = *cur - 1;
-            }
-            // array
-            else if (buf[i] == '[') {
-            }
-            // unrecognized
-            else {
-                log_err (false,
-                         "json_decode: incomplete value token (key: "
-                         "%s)",
-                         key_buf);
+            if (!_decode_val (buf, &i, len, obj, NULL, key_buf)) {
+                json_free (obj);
+                return NULL;
             }
 
             state++;
-            continue;
+            *cur = i;
         }
 
         // COMMA = STATE 1, CURLY BRACKET CLOSE = FINISH
@@ -401,8 +652,9 @@ static json_object *_decode (const char *buf, size_t *cur, size_t *len) {
                 break;
             } else if (err_state) {
                 log_err (false,
-                         "json_decode: expected ',' or '}' char at byte %ld",
-                         i);
+                         "json_decode_obj: expected ',' or '}' char at byte "
+                         "%ld, got '%c'",
+                         i, buf[i]);
                 break;
             }
         }
@@ -410,12 +662,11 @@ static json_object *_decode (const char *buf, size_t *cur, size_t *len) {
 
     // ended early
     if (state != 6) {
-        if (err_state) {
-            log_err (false, "%s, json_decode: incomplete object (state: %d)",
-                     err_buf, state)
-        } else {
-            log_err (false, "json_decode: incomplete object (state: %d)",
-                     state);
+        if (!err_state) {
+            log_err (
+               false,
+               "json_decode_obj: incomplete object (state: %d, cursor: %lu)",
+               state, *cur);
         }
         json_free (obj);
         return NULL;
@@ -430,14 +681,14 @@ json_object *json_decode (const char *buf, size_t len) {
     if (!len) len = strlen (buf);
     size_t cur = 0;
 
-    return _decode (buf, &cur, &len);
+    return __decode_obj (buf, &cur, &len);
 }
 
 extern bool __append_obj_v (json_kv *v, str_auto *str, bool compact,
                             int indents);
 
 static bool _append_whitespace (str_auto *str, int indents) {
-    str_putchar (str, '\n');
+    str_add_char (str, '\n');
     for (int i = 0; i < indents + 1; i++) { str_append (str, "    "); }
 
     return true;
@@ -462,30 +713,30 @@ static bool _append_val_data (json_kv *v, str_auto *str, bool compact,
             break;
         }
         case JSON_NUM: {
-            if (fmod (v->data.n, 1.0)) {
-                str_printf (str, "%lf", v->data.n);
-            } else
-                str_printf (str, "%ld", (long) v->data.n);
+            str_printf (str, "%lg", v->data.n);
             break;
         }
         case JSON_ARRAY: {
-            str_putchar (str, '[');
+            str_add_char (str, '[');
 
             if (!v->data.arr || !v->data.arr->vals) {
-                str_putchar (str, ']');
+                str_add_char (str, ']');
                 break;
             }
 
             for (size_t i = 0; i < v->data.arr->len; i++) {
-                str += _append_val_data (v->data.arr->vals[i], str, compact,
-                                         indents);
-                if (i != v->data.arr->len + 1) {
-                    str_putchar (str, ',');
-                    if (!compact) str_putchar (str, ' ');
+                if (!_append_val_data (v->data.arr->vals[i], str, compact,
+                                       indents)) {
+                    return false;
+                }
+
+                if (i != v->data.arr->len - 1) {
+                    str_add_char (str, ',');
+                    if (!compact) str_add_char (str, ' ');
                 }
             }
 
-            str_putchar (str, ']');
+            str_add_char (str, ']');
             break;
         }
         case JSON_OBJECT: {
@@ -505,7 +756,7 @@ static bool _append_val_data (json_kv *v, str_auto *str, bool compact,
 bool __append_obj_v (json_kv *v, str_auto *str, bool compact, int indents) {
     if (!v || !str) return 0;
 
-    str_putchar (str, '{');
+    str_add_char (str, '{');
 
     for (json_kv *val = v; val;) {
         if (!compact) _append_whitespace (str, indents);
@@ -513,11 +764,11 @@ bool __append_obj_v (json_kv *v, str_auto *str, bool compact, int indents) {
         _append_val_data (val, str, compact, indents);
 
         val = val->_next;
-        if (val) str_putchar (str, ',');
+        if (val) str_add_char (str, ',');
     }
 
     if (!compact) _append_whitespace (str, indents - 1);
-    str_putchar (str, '}');
+    str_add_char (str, '}');
 
     return true;
 }
@@ -528,8 +779,73 @@ char *json_encode (json_object *obj, size_t *len, bool compact) {
     str_auto *str = str_init (NULL);
     if (!str) return NULL; // malloc error will print within str_init
 
-    __append_obj_v (obj->vals, str, compact, 0);
+    if (!__append_obj_v (obj->vals, str, compact, 0)) {
+        free (str);
+        return NULL;
+    }
 
     // ditch the auto string and return
     return str_detach (str, len);
+}
+
+// -- file i/o --
+bool json_write (json_object *obj, const char *path) {
+    FILE *file = fopen (path, "w");
+    if (!file) {
+        log_err (false, "json_write: fopen failed: %s", strerror (errno));
+        return false;
+    }
+
+    size_t file_len;
+    char *buf = json_encode (obj, &file_len, false);
+    if (!buf) {
+        fclose (file);
+        return false;
+    }
+
+    if (!fwrite (buf, file_len, 1, file)) {
+        log_err (false, "json_write: fwrite failed: %s", strerror (errno));
+        fclose (file);
+        free (buf);
+        return false;
+    }
+
+    fclose (file);
+    free (buf);
+    return true;
+}
+
+json_object *json_read (const char *path) {
+    FILE *file = fopen (path, "r");
+    if (!file) {
+        log_err (false, "json_read: fopen failed: %s", strerror (errno));
+        return NULL;
+    }
+
+    fseek (file, 0, SEEK_END);
+    size_t file_len = ftell (file);
+    fseek (file, 0, SEEK_SET);
+
+    char *buf = malloc (file_len + 1);
+    if (!buf) {
+        log_malloc_err (file_len + 1);
+        fclose (file);
+        return NULL;
+    }
+
+    buf[file_len - 1] = '\0';
+
+    if (fread ((void *) buf, 1, file_len, file) != file_len) {
+        log_err (false, "json_read: fread failed: %s", strerror (errno));
+        free (buf);
+        fclose (file);
+        return NULL;
+    }
+
+    fclose (file);
+
+    json_object *obj = json_decode (buf, file_len);
+
+    free (buf);
+    return obj;
 }

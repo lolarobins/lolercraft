@@ -43,11 +43,11 @@ static bool sb_hello (s_client *client) {
 
     buf_auto *packet = p_buf_init (0x1);
 
-    if (!buf_addb (packet, 0)                             // 0 byte for string
+    if (!buf_add_byte (packet, 0)                             // 0 byte for string
         || !p_buf_str (packet, (char *) p_der, p_der_len) // public key
         || !p_buf_str (packet, (char *) client->_token_start,
                        4)                                // generated token
-        || !buf_addb (packet, s_offline_mode ? 0 : 1)) { // bool for auth
+        || !buf_add_byte (packet, s_offline_mode ? 0 : 1)) { // bool for auth
         if (err_state)
             log_debug ("login handshake response error occured: %s", err_buf);
         return false;
@@ -325,7 +325,7 @@ static bool sb_key (s_client *client) {
 
     buf_append (packet, (uint8_t *) out_uuid, 16);
     p_buf_str (packet, client->username, 0);
-    buf_addb (packet, 1);
+    buf_add_byte (packet, 1);
     p_buf_send (client, packet);
 
     return true;
