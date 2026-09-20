@@ -18,7 +18,7 @@
 uint8_t s_flags;
 
 // string address
-char s_addr4[16], s_addr6[40];
+char s_addr4[256], s_addr6[256];
 
 // address struct for ipv4/ipv6
 struct sockaddr_in _addr4;

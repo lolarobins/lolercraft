@@ -35,12 +35,12 @@ static const char default_config[]
      "    \"ipv4\": {\n"
      "        \"address\": \"localhost\",\n"
      "        \"port\": 25565,\n"
-     "        \"enabled:\" true\n"
+     "        \"enabled\": true\n"
      "    },\n"
      "    \"ipv6\": {\n"
      "        \"address\": \"::1\",\n"
-     "        \"port\": 25565\n"
-     "        \"enabled:\" false\n"
+     "        \"port\": 25565,\n"
+     "        \"enabled\": false\n"
      "    }\n"
      "}\n";
 
@@ -82,7 +82,7 @@ static bool load_config () {
                "default configuration generated at %s, please make any "
                "necessary changes and restart the program\n",
                full_path);
-            return -1;
+            return false;
         } else {
             fprintf (stderr, "FATAL: failed to read config.json: %s\n",
                      err_buf);
@@ -90,22 +90,61 @@ static bool load_config () {
         }
     }
 
+    // TODO: implement json auto loading values to avoid this repetitive thing
+
     // load values
     json_kv *offline_mode = json_get (obj, "offline");
     s_offline_mode        = offline_mode && offline_mode->type == JSON_BOOL
                             && offline_mode->data.b == true;
 
-    json_kv *ipv4 = json_get(obj, "ipv4");
+    json_kv *ipv4 = json_get (obj, "ipv4");
     if (ipv4 && ipv4->type == JSON_OBJECT) {
-    } 
+        json_kv *enabled = json_get (ipv4->data.obj, "enabled");
+        if (enabled && enabled->type == JSON_BOOL && enabled->data.b == true) {
+            s_flags |= S_FLAG_IPV4;
+
+            json_kv *address = json_get (ipv4->data.obj, "address");
+            if (!address || address->type != JSON_STRING)
+                strcpy (s_addr4, "localhost");
+            else
+                strncpy (s_addr4, address->data.str, sizeof (s_addr4));
+
+            json_kv *port = json_get (ipv4->data.obj, "port");
+            if (!port || port->type != JSON_NUM) s_port4 = 25565;
+            else
+                s_port4 = (uint16_t) port->data.n;
+        }
+    }
+
+    json_kv *ipv6 = json_get (obj, "ipv6");
+    if (ipv6 && ipv6->type == JSON_OBJECT) {
+        json_kv *enabled = json_get (ipv6->data.obj, "enabled");
+        if (enabled && enabled->type == JSON_BOOL && enabled->data.b == true) {
+            s_flags |= S_FLAG_IPV6;
+
+            json_kv *address = json_get (ipv6->data.obj, "address");
+            if (!address || address->type != JSON_STRING)
+                strcpy (s_addr6, "localhost");
+            else
+                strncpy (s_addr6, address->data.str, sizeof (s_addr6));
+
+            json_kv *port = json_get (ipv6->data.obj, "port");
+            if (!port || port->type != JSON_NUM) s_port6 = 25565;
+            else
+                s_port6 = (uint16_t) port->data.n;
+        }
+    }
 
     json_free (obj);
 
     // debug print
-    log_debug("starting with the following configuration:");
-    log_debug("mojang authentication: %s", offline_mode ? "disabled" : "enabled");
-    if (s_flags & S_FLAG_IPV4) log_debug("ipv4 socket: %s:%d", s_addr4, s_port4);
-    if (s_flags & S_FLAG_IPV6) log_debug("ipv6 socket: %s:%d", s_addr6, s_port6);
+    log_debug ("starting with the following configuration:");
+    log_debug (" - mojang authentication: %s",
+               s_offline_mode ? "disabled" : "enabled");
+    if (s_flags & S_FLAG_IPV4)
+        log_debug (" - ipv4 socket: %s:%d", s_addr4, s_port4);
+    if (s_flags & S_FLAG_IPV6)
+        log_debug (" - ipv6 socket: %s:%d", s_addr6, s_port6);
 
     return true;
 }
@@ -121,8 +160,6 @@ int main () {
         fprintf (stderr, "FATAL: neither ipv4 nor ipv6 socket enabled\n");
         return -1;
     }
-
-    return 0;
 
     // openssl setup
     ERR_load_crypto_strings ();

@@ -63,7 +63,7 @@ typedef struct s_client {
 extern uint8_t s_flags;
 
 // string form of addresses for ipv4/ipv6
-extern char s_addr4[16], s_addr6[40];
+extern char s_addr4[256], s_addr6[256];
 
 // ipv4/ipv6 file descriptors
 extern int s_fd4, s_fd6;
@@ -80,13 +80,13 @@ extern bool s_offline_mode;
 #define s_set_addr4(addr, port)      \
     {                                \
         s_port4 = port;              \
-        strlcpy (s_addr4, addr, 16); \
+        strlcpy (s_addr4, addr, 256); \
         s_flags |= S_FLAG_IPV4;      \
     }
 #define s_set_addr6(addr, port)      \
     {                                \
         s_port6 = port;              \
-        strlcpy (s_addr6, addr, 40); \
+        strlcpy (s_addr6, addr, 256); \
         s_flags |= S_FLAG_IPV6;      \
     }
 

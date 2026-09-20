@@ -52,7 +52,7 @@ void json_free (json_object *obj) {
 }
 
 json_object *json_init () {
-    json_object *obj = calloc (1, sizeof (json_object *));
+    json_object *obj = calloc (1, sizeof (json_object));
     if (!obj) { log_malloc_err (sizeof (json_object *)) return NULL; }
 
     return obj;
@@ -378,7 +378,7 @@ extern json_object *__decode_obj (const char *buf, size_t *cur, size_t *len);
 
 static bool _decode_val (const char *buf, size_t *cur, size_t *len,
                          json_object *obj, json_array *arr, const char *key) {
-    if (!(arr || (obj && key))) return false;
+    if (!buf || !cur || !len || !(arr || (obj && key))) return false;
 
     size_t i      = *cur;
     int val_start = *cur, val_len = 0;
@@ -422,12 +422,17 @@ static bool _decode_val (const char *buf, size_t *cur, size_t *len,
                            (int) val_len, &buf[val_start])
                     }
 
-                double d;
-                if (sscanf (&buf[val_start], "%lf", &d) != 1) {
+                // move into own buf to allow for null-terminated string
+                char num_str[val_len + 1];
+                strncpy(num_str, &buf[val_start],val_len);
+                num_str[val_len] = '\0';
+
+                double d = 0;
+                if (sscanf (num_str, "%lf", &d) != 1) {
                     log_err (
                        false,
                        "json_decode_obj: sscanf could not parse double '%*.s'",
-                       (int) val_len, &buf[val_start]);
+                       (int) val_len, num_str);
                     return false;
                 }
 
@@ -462,7 +467,6 @@ static bool _decode_val (const char *buf, size_t *cur, size_t *len,
 
         if (!new_obj || !VAL_SET (object, new_obj)) {
             if (!new_obj) json_free (new_obj);
-            free (obj);
             return false;
         }
     }
@@ -833,7 +837,7 @@ json_object *json_read (const char *path) {
         return NULL;
     }
 
-    buf[file_len - 1] = '\0';
+    buf[file_len] = '\0';
 
     if (fread ((void *) buf, 1, file_len, file) != file_len) {
         log_err (false, "json_read: fread failed: %s", strerror (errno));
