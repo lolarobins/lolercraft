@@ -10,7 +10,7 @@ extern "C" {
 #include <stdint.h>
 #include <stdlib.h>
 
-#include "misctypes.h"
+#include "types.h"
 #include "socket.h"
 
 // -- packet handling --
@@ -20,6 +20,9 @@ extern int32_t p_receive (s_client *client);
 extern bool p_decrypt (s_client *client, uint8_t *buf, size_t buf_len);
 
 // -- data reading --
+
+// read an unsigned 8 bit int
+extern uint8_t p_read_uint8 (s_client *client);
 
 // read an unsigned short (u16)
 extern uint16_t p_read_uint16 (s_client *client);

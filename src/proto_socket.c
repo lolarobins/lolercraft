@@ -43,17 +43,23 @@ bool s_offline_mode;
 
 static void _free_client (s_client *client) {
     if (!client) return;
+    if (client->state == 4) log_debug ("disconnected during configuration");
 
     p_client_free (client);
 
     if (client->_fd) close (client->_fd);
     if (client->_p_buf) free (client->_p_buf);
+    if (client->_skin) free (client->_skin);
+    if (client->_signature) free (client->_signature);
+    if (client->brand) free (client->brand);
+    if (client->locale) free (client->locale);
 
     free (client);
 }
 
 // callback lists
 extern p_sb_cb p_login_sb[5];
+extern p_sb_cb p_config_sb[10];
 
 static void *_client (void *data) {
     s_client *client = data;
@@ -88,6 +94,7 @@ static void *_client (void *data) {
     }
 
     // -- server status request --
+    // code only used here, no need for own function despite length
     if (client->state == 1) {
         packet_id = p_receive (client);
 
@@ -147,6 +154,7 @@ static void *_client (void *data) {
 
     while (client->state == 2 || client->state == 3) {
         packet_id = p_receive (client);
+
         if (packet_id == -1
             || packet_id > (sizeof (p_login_sb) / sizeof (p_sb_cb))) {
             // invalid packet
@@ -158,6 +166,30 @@ static void *_client (void *data) {
             log_err (false, "unhandled packet %d in login state", packet_id);
             // disconnect msg
         } else if (!p_login_sb[packet_id](client)) {
+            // if error set send disconnect msg
+            if (err_state)
+                log_err (false, "login callback 0x%x error: %s", packet_id,
+                         err_buf);
+            _free_client (client);
+            return NULL;
+        }
+    }
+
+    // -- configuration handling --
+    while (client->state == 4) {
+        packet_id = p_receive (client);
+
+        if (packet_id == -1
+            || packet_id > (sizeof (p_config_sb) / sizeof (p_sb_cb))) {
+            // invalid packet
+            _free_client (client);
+            return NULL;
+        }
+
+        if (!p_config_sb[packet_id]) {
+            log_err (false, "unhandled packet %d in config state", packet_id);
+            // disconnect msg
+        } else if (!p_config_sb[packet_id](client)) {
             // if error set send disconnect msg
             if (err_state)
                 log_err (false, "login callback 0x%x error: %s", packet_id,

@@ -1,7 +1,6 @@
 // lolercraft
 // client packet handling
 
-#include "lolercraft/misctypes.h"
 #include <errno.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -113,6 +112,19 @@ int32_t p_receive (s_client *client) {
 }
 
 // -- data reading --
+
+uint8_t p_read_uint8 (s_client *client) {
+    if (!client) {return 0;}
+    if (1 > client->_p_buf_len - client->_p_buf_cur) {
+        log_err (false, "p_read_uint8: not enough data remaining in packet");
+        return 0;
+    }
+
+    uint8_t ret_val = *(client->_p_buf + client->_p_buf_cur);
+    client->_p_buf_cur++;
+
+    return ret_val;
+}
 
 uint16_t p_read_uint16 (s_client *client) {
     if (!client) { return 0; }

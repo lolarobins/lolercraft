@@ -1,4 +1,3 @@
-#include <lolercraft/misctypes.h>
 #include <openssl/err.h>
 #include <openssl/pem.h>
 #include <openssl/rand.h>
@@ -6,6 +5,7 @@
 
 #include <lolercraft/logging.h>
 #include <lolercraft/protocol.h>
+#include <lolercraft/types.h>
 
 EVP_PKEY *p_pkey;
 uint8_t *p_der;
@@ -53,8 +53,8 @@ void p_encrypt_free () {
 }
 
 void p_client_free (s_client *client) {
-    if (client->_encrypt)  EVP_CIPHER_CTX_cleanup(client->_encrypt);
-    if (client->_decrypt) EVP_CIPHER_CTX_cleanup(client->_decrypt);
+    if (client->_encrypt) EVP_CIPHER_CTX_cleanup (client->_encrypt);
+    if (client->_decrypt) EVP_CIPHER_CTX_cleanup (client->_decrypt);
 }
 
 bool p_encrypt (s_client *client, buf_auto *buf) {
@@ -87,8 +87,7 @@ bool p_decrypt (s_client *client, uint8_t *buf, size_t buf_len) {
     if (!client->_encrypted) { return true; }
 
     int new_len;
-    if (EVP_DecryptUpdate (client->_decrypt, buf, &new_len, buf,
-                           buf_len)
+    if (EVP_DecryptUpdate (client->_decrypt, buf, &new_len, buf, buf_len)
         <= 0) {
         log_debug ("decryption update failed: %s",
                    ERR_reason_error_string (ERR_peek_last_error ()));

@@ -9,29 +9,30 @@
 
 #include <lolercraft/json.h>
 #include <lolercraft/logging.h>
-#include <lolercraft/misctypes.h>
+#include <lolercraft/types.h>
 
 // -- free & init --
 
 static void _free_vals (json_kv *v) {
     for (json_kv *val = v; val != NULL;) {
         switch (val->type) {
-
             case JSON_STRING: {
-                free (val->data.str);
+                if (val->data.str) free (val->data.str);
                 break;
             }
             case JSON_ARRAY: {
-                if (val->data.arr->vals) {
-                    for (size_t i = 0; i < val->data.arr->len; i++)
-                        _free_vals (val->data.arr->vals[i]);
-                    free (val->data.arr->vals);
+                if (val->data.arr) {
+                    if (val->data.arr->vals) {
+                        for (size_t i = 0; i < val->data.arr->len; i++)
+                            _free_vals (val->data.arr->vals[i]);
+                        free (val->data.arr->vals);
+                    }
+                    free (val->data.arr);
                 }
-                free (val->data.arr);
                 break;
             }
             case JSON_OBJECT: {
-                json_free (val->data.obj);
+                if (val->data.obj) json_free (val->data.obj);
                 break;
             }
             default: break;
@@ -424,7 +425,7 @@ static bool _decode_val (const char *buf, size_t *cur, size_t *len,
 
                 // move into own buf to allow for null-terminated string
                 char num_str[val_len + 1];
-                strncpy(num_str, &buf[val_start],val_len);
+                strncpy (num_str, &buf[val_start], val_len);
                 num_str[val_len] = '\0';
 
                 double d = 0;

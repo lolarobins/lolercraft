@@ -6,7 +6,7 @@ extern "C" {
 
 #include <openssl/pem.h>
 
-#include <lolercraft/misctypes.h>
+#include <lolercraft/types.h>
 #include <lolercraft/protocol.h>
 
 EVP_PKEY *p_pkey;

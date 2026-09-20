@@ -1,7 +1,5 @@
 // lolercraft
 
-#include "lolercraft/json.h"
-#include "lolercraft/socket.h"
 #include <errno.h>
 #include <pthread.h>
 #include <signal.h>
@@ -17,6 +15,8 @@
 #include <lolercraft/encryption.h>
 #include <lolercraft/logging.h>
 #include <lolercraft/protocol.h>
+#include <lolercraft/json.h>
+#include <lolercraft/socket.h>
 
 volatile bool running = true;
 

@@ -7,7 +7,7 @@
 #include <stdlib.h>
 
 #include <lolercraft/logging.h>
-#include <lolercraft/misctypes.h>
+#include <lolercraft/types.h>
 #include <string.h>
 
 // -- auto expanding bufs/strings --
@@ -22,7 +22,7 @@ static inline size_t mem_needed (size_t len) {
 // add new memory to str
 static inline bool mem_resize_s (str_auto *str, size_t newlen) {
     size_t needed = mem_needed (newlen);
-    
+
     if (needed != str->_alen) {
         void *old_ptr = str->str;
         if (!(str->str = realloc (str->str, needed))) {
@@ -133,7 +133,7 @@ bool str_add_char (str_auto *str, char c) {
     if (!mem_resize_s (str, str->len + 2)) return false;
 
     str->str[str->len++] = c;
-    str->str[str->len] = '\0';
+    str->str[str->len]   = '\0';
 
     return true;
 }
@@ -184,7 +184,7 @@ bool buf_expand (buf_auto *buf, size_t len) {
     if (!buf) return false;
     if (!len) return true;
 
-    return mem_resize_b(buf, buf->len + len);
+    return mem_resize_b (buf, buf->len + len);
 }
 
 bool buf_printf (buf_auto *buf, const char *fmt, ...) {

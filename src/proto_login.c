@@ -3,18 +3,20 @@
 // client authentication handling
 // encryption
 
-#include "lolercraft/socket.h"
-#include <lolercraft/encryption.h>
-#include <lolercraft/logging.h>
-#include <lolercraft/misctypes.h>
-#include <lolercraft/protocol.h>
-
 #include <openssl/err.h>
 #include <openssl/pem.h>
 #include <openssl/rand.h>
 #include <openssl/rsa.h>
 
 #include <curl/curl.h>
+
+#include <lolercraft/encryption.h>
+#include <lolercraft/logging.h>
+#include <lolercraft/protocol.h>
+#include <lolercraft/socket.h>
+#include <lolercraft/types.h>
+#include <lolercraft/json.h>
+
 
 // -- packet callbacks --
 // uses identifiers listed by wiki.vg
@@ -43,10 +45,10 @@ static bool sb_hello (s_client *client) {
 
     buf_auto *packet = p_buf_init (0x1);
 
-    if (!buf_add_byte (packet, 0)                             // 0 byte for string
+    if (!buf_add_byte (packet, 0)                         // 0 byte for string
         || !p_buf_str (packet, (char *) p_der, p_der_len) // public key
         || !p_buf_str (packet, (char *) client->_token_start,
-                       4)                                // generated token
+                       4)                                    // generated token
         || !buf_add_byte (packet, s_offline_mode ? 0 : 1)) { // bool for auth
         if (err_state)
             log_debug ("login handshake response error occured: %s", err_buf);
@@ -140,9 +142,9 @@ static bool _mc_hash (s_client *client, char *out) {
     if (neg) {
         uint8_t carry = 1;
         for (int i = (int) digest_len - 1; i >= 0; i--) {
-            uint16_t val = (uint16_t) (~digest[i]) + carry;
-            digest[i]    = (uint8_t) (val & 0xFF);
-            carry        = (uint8_t) (val >> 8);
+            int val   = ((~digest[i]) & 0xFF) + carry;
+            digest[i] = (uint8_t) (val & 0xFF);
+            carry     = (val > 0xFF) ? 1 : 0;
         }
     }
 
@@ -255,7 +257,55 @@ static bool _auth (s_client *client) {
     curl_easy_getinfo (curl, CURLINFO_RESPONSE_CODE, &code);
 
     if (code == 200) {
-        // pull + verify data
+        // pull data
+        json_object *obj = json_decode (c_buf.buf, 0);
+        if (!obj) return false;
+
+        // large safety check
+        json_kv *properties_kv = json_get (obj, "properties");
+        if (!properties_kv || properties_kv->type != JSON_ARRAY
+            || !properties_kv->data.arr) {
+            json_free (obj);
+            return false;
+        }
+
+        for (size_t i = 0; i < properties_kv->data.arr->len; i++) {
+            if (properties_kv->data.arr->vals[i]->type != JSON_OBJECT) continue;
+
+            json_object *properties
+               = properties_kv->data.arr->vals[0]->data.obj;
+            json_kv *name_kv = NULL, *sig_kv = NULL, *skin_kv = NULL;
+
+            if (!(name_kv = json_get (properties, "name"))
+                || name_kv->type != JSON_STRING
+                || !strcmp ("textures", name_kv->data.str))
+                continue;
+
+            if (!(sig_kv = json_get (properties, "signature"))
+                || !((sig_kv = json_get (properties, "value")))
+                || sig_kv->type != JSON_STRING
+                || skin_kv->type != JSON_STRING) {
+                json_free (obj);
+                return false;
+            }
+
+            client->_signature = strdup (sig_kv->data.str);
+            if (!client->_signature) {
+                log_malloc_err (strlen (sig_kv->data.str) + 1);
+                json_free (obj);
+                return false;
+            }
+
+            client->_skin = strdup (skin_kv->data.str);
+            if (!client->_skin) {
+                log_malloc_err (strlen (skin_kv->data.str) + 1);
+                json_free (obj);
+                return false;
+            }
+        }
+
+        json_free (obj);
+
         log_debug ("authentication success");
         success = true;
     } else {
@@ -315,7 +365,10 @@ static bool sb_key (s_client *client) {
 
     // THIS WOULD BE THE PLACE TO ENABLE COMPRESSION, DO LATER!
 
-    // clientbound login success packet
+    // clientbound login success packet (id: 2, minecraft:login_success)
+    // UUID, username, property count (1), "textures", skin, bool (1), skin sig
+    // bool 0
+
     buf_auto *packet = p_buf_init (2);
 
     // form client uuid (be)
@@ -325,7 +378,17 @@ static bool sb_key (s_client *client) {
 
     buf_append (packet, (uint8_t *) out_uuid, 16);
     p_buf_str (packet, client->username, 0);
-    buf_add_byte (packet, 1);
+
+    // add skin (optional)
+    if (client->_skin && client->_signature) {
+        buf_add_byte (packet, 1);
+        p_buf_str (packet, "textures", 0);
+        p_buf_str (packet, client->_skin, 0);
+        buf_add_byte (packet, 1);
+        p_buf_str (packet, client->_signature, 0);
+    }
+
+    buf_add_byte (packet, 0);
     p_buf_send (client, packet);
 
     return true;
